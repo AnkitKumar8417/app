@@ -7,7 +7,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -15,8 +14,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialDesignIcons from "@react-native-vector-icons/material-design-icons";
 
 import { ScreenHeader } from "@/src/components/screen-header";
-import { DemoBadge } from "@/src/components/demo-badge";
-import { TRAINS, Train } from "@/src/data/railways";
+import { LiveBadge } from "@/src/components/demo-badge";
+import { StationPicker } from "@/src/components/station-picker";
+import { Station, SearchTrain, trainsBetween, readableDays } from "@/src/data/api";
 import { useTheme, spacing, radius } from "@/src/theme";
 
 export default function TrainSearch() {
@@ -24,128 +24,129 @@ export default function TrainSearch() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [date, setDate] = useState("15 May 2026");
-  const [results, setResults] = useState<Train[] | null>(null);
+  const [from, setFrom] = useState<Station | null>(null);
+  const [to, setTo] = useState<Station | null>(null);
+  const [results, setResults] = useState<SearchTrain[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const canSearch = useMemo(() => from.trim().length > 1 && to.trim().length > 1, [from, to]);
+  const canSearch = useMemo(() => !!from && !!to && from.code !== to.code, [from, to]);
 
-  function doSearch() {
-    if (!canSearch) return;
+  async function doSearch() {
+    if (!canSearch || !from || !to) return;
     setLoading(true);
     setResults(null);
-    setTimeout(() => {
-      const q = (from + to).toLowerCase();
-      const match = TRAINS.filter((t) => {
-        const inFrom = t.from.toLowerCase().includes(from.toLowerCase()) || t.fromCode.toLowerCase().includes(from.toLowerCase());
-        const inTo = t.to.toLowerCase().includes(to.toLowerCase()) || t.toCode.toLowerCase().includes(to.toLowerCase());
-        return inFrom && inTo;
-      });
-      setResults(match.length > 0 ? match : TRAINS.slice(0, 4));
-      setLoading(false);
-      void q;
-    }, 650);
+    setError(null);
+    const res = await trainsBetween(from.code, to.code);
+    setLoading(false);
+    if (res.success) {
+      setResults(res.data);
+    } else {
+      setError(res.error);
+      setResults([]);
+    }
   }
 
-  function openDetail(train: Train) {
-    router.push({ pathname: "/train-detail", params: { number: train.number } });
+  function openDetail(train: SearchTrain) {
+    router.push({ pathname: "/train-detail", params: { number: train.train_no } });
   }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="train-search-screen">
-      <ScreenHeader title="Train Search" subtitle="Find trains between stations" />
+      <ScreenHeader title="Train Search" subtitle="Live from Indian Railways" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.formWrap}>
-          <View style={[styles.card, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-            <FieldRow icon="train-car" label="FROM">
-              <TextInput
-                testID="search-from-input"
-                placeholder="Mumbai Central / MMCT"
-                placeholderTextColor={colors.muted}
-                value={from}
-                onChangeText={setFrom}
-                style={[styles.input, { color: colors.onSurface }]}
-              />
-            </FieldRow>
-            <View style={[styles.sep, { backgroundColor: colors.divider }]} />
-            <FieldRow icon="map-marker-check" label="TO">
-              <TextInput
-                testID="search-to-input"
-                placeholder="New Delhi / NDLS"
-                placeholderTextColor={colors.muted}
-                value={to}
-                onChangeText={setTo}
-                style={[styles.input, { color: colors.onSurface }]}
-              />
-            </FieldRow>
-            <View style={[styles.sep, { backgroundColor: colors.divider }]} />
-            <FieldRow icon="calendar" label="DATE">
-              <TextInput
-                testID="search-date-input"
-                placeholder="15 May 2026"
-                placeholderTextColor={colors.muted}
-                value={date}
-                onChangeText={setDate}
-                style={[styles.input, { color: colors.onSurface }]}
-              />
-            </FieldRow>
-          </View>
-
-          <Pressable
-            testID="search-submit-button"
-            disabled={!canSearch || loading}
-            onPress={doSearch}
-            style={({ pressed }) => [
-              styles.submit,
-              {
-                backgroundColor: canSearch ? colors.brandPrimary : colors.surfaceTertiary,
-                opacity: pressed ? 0.9 : 1,
-              },
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.onBrandPrimary} />
-            ) : (
-              <>
-                <MaterialDesignIcons name="magnify" size={20} color={canSearch ? colors.onBrandPrimary : colors.muted} />
-                <Text style={[styles.submitText, { color: canSearch ? colors.onBrandPrimary : colors.muted }]}>
-                  Search trains
-                </Text>
-              </>
-            )}
-          </Pressable>
-        </View>
-
-        <View style={styles.resultsHeader}>
-          <Text style={[styles.resultsTitle, { color: colors.onSurface }]}>
-            {results === null ? "Suggestions" : `${results.length} trains`}
-          </Text>
-          <DemoBadge compact />
-        </View>
-
         <FlatList
-          data={results ?? TRAINS}
-          keyExtractor={(t) => t.number}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl }}
+          data={results ?? []}
+          keyExtractor={(t, idx) => `${t.train_no}-${idx}`}
+          contentContainerStyle={{
+            paddingHorizontal: spacing.lg,
+            paddingBottom: insets.bottom + spacing.xl,
+          }}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <View>
+              <View style={[styles.card, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <StationPicker
+                  icon="train-car"
+                  label="FROM"
+                  placeholder="Mumbai Central"
+                  value={from}
+                  onChange={setFrom}
+                  testID="search-from"
+                />
+                <View style={[styles.sep, { backgroundColor: colors.divider }]} />
+                <StationPicker
+                  icon="map-marker-check"
+                  label="TO"
+                  placeholder="New Delhi"
+                  value={to}
+                  onChange={setTo}
+                  testID="search-to"
+                />
+              </View>
+
+              <Pressable
+                testID="search-submit-button"
+                disabled={!canSearch || loading}
+                onPress={doSearch}
+                style={({ pressed }) => [
+                  styles.submit,
+                  {
+                    backgroundColor: canSearch ? colors.brandPrimary : colors.surfaceTertiary,
+                    opacity: pressed ? 0.9 : 1,
+                  },
+                ]}
+              >
+                {loading ? (
+                  <ActivityIndicator color={colors.onBrandPrimary} />
+                ) : (
+                  <>
+                    <MaterialDesignIcons
+                      name="magnify"
+                      size={20}
+                      color={canSearch ? colors.onBrandPrimary : colors.muted}
+                    />
+                    <Text style={[styles.submitText, { color: canSearch ? colors.onBrandPrimary : colors.muted }]}>
+                      Search trains
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+
+              <View style={styles.resultsHeader}>
+                <Text style={[styles.resultsTitle, { color: colors.onSurface }]}>
+                  {results === null
+                    ? "Pick stations"
+                    : loading
+                    ? "Searching..."
+                    : `${results.length} trains`}
+                </Text>
+                <LiveBadge compact />
+              </View>
+
+              {error ? (
+                <View style={[styles.errorCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.error }]}>
+                  <MaterialDesignIcons name="alert-circle" size={16} color={colors.error} />
+                  <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+                </View>
+              ) : null}
+            </View>
+          }
           ListEmptyComponent={
-            !loading ? (
+            !loading && results !== null ? (
               <View style={styles.empty}>
                 <MaterialDesignIcons name="train-variant" size={48} color={colors.muted} />
                 <Text style={[styles.emptyText, { color: colors.muted }]}>
-                  No trains found. Try other stations.
+                  No trains found between {from?.code} → {to?.code}
                 </Text>
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <TrainResultCard train={item} onPress={() => openDetail(item)} />
-          )}
+          renderItem={({ item }) => <TrainResultCard train={item} onPress={() => openDetail(item)} />}
           testID="search-results-list"
         />
       </KeyboardAvoidingView>
@@ -153,34 +154,11 @@ export default function TrainSearch() {
   );
 }
 
-function FieldRow({
-  icon,
-  label,
-  children,
-}: {
-  icon: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.fieldRow}>
-      <View style={[styles.fieldIcon, { backgroundColor: colors.brandTertiary }]}>
-        <MaterialDesignIcons name={icon as any} size={18} color={colors.brandPrimary} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text>
-        {children}
-      </View>
-    </View>
-  );
-}
-
-export function TrainResultCard({ train, onPress }: { train: Train; onPress?: () => void }) {
+function TrainResultCard({ train, onPress }: { train: SearchTrain; onPress?: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable
-      testID={`train-card-${train.number}`}
+      testID={`train-card-${train.train_no}`}
       onPress={onPress}
       style={({ pressed }) => [
         trainCardStyles.card,
@@ -192,41 +170,46 @@ export function TrainResultCard({ train, onPress }: { train: Train; onPress?: ()
       ]}
     >
       <View style={trainCardStyles.topRow}>
-        <View>
-          <Text style={[trainCardStyles.number, { color: colors.brandPrimary }]}>{train.number}</Text>
-          <Text style={[trainCardStyles.name, { color: colors.onSurface }]}>{train.name}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[trainCardStyles.number, { color: colors.brandPrimary }]}>{train.train_no}</Text>
+          <Text style={[trainCardStyles.name, { color: colors.onSurface }]} numberOfLines={1}>
+            {train.train_name}
+          </Text>
         </View>
         <View style={[trainCardStyles.daysChip, { backgroundColor: colors.surfaceTertiary }]}>
-          <Text style={[trainCardStyles.daysText, { color: colors.muted }]}>{train.days}</Text>
+          <Text style={[trainCardStyles.daysText, { color: colors.muted }]}>{readableDays(train.running_days)}</Text>
         </View>
       </View>
       <View style={trainCardStyles.timeRow}>
         <View style={trainCardStyles.col}>
-          <Text style={[trainCardStyles.time, { color: colors.onSurface }]}>{train.departure}</Text>
-          <Text style={[trainCardStyles.station, { color: colors.muted }]}>{train.fromCode}</Text>
+          <Text style={[trainCardStyles.time, { color: colors.onSurface }]}>{train.from_time}</Text>
+          <Text style={[trainCardStyles.station, { color: colors.muted }]}>{train.from_stn_code}</Text>
           <Text style={[trainCardStyles.stationName, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>
-            {train.from}
+            {train.from_stn_name}
           </Text>
         </View>
         <View style={trainCardStyles.midCol}>
-          <Text style={[trainCardStyles.duration, { color: colors.brandPrimary }]}>{train.duration}</Text>
+          <Text style={[trainCardStyles.duration, { color: colors.brandPrimary }]}>{train.travel_time}</Text>
           <View style={[trainCardStyles.line, { backgroundColor: colors.borderStrong }]} />
           <MaterialDesignIcons name="train" size={14} color={colors.muted} />
         </View>
         <View style={[trainCardStyles.col, { alignItems: "flex-end" }]}>
-          <Text style={[trainCardStyles.time, { color: colors.onSurface }]}>{train.arrival}</Text>
-          <Text style={[trainCardStyles.station, { color: colors.muted }]}>{train.toCode}</Text>
+          <Text style={[trainCardStyles.time, { color: colors.onSurface }]}>{train.to_time}</Text>
+          <Text style={[trainCardStyles.station, { color: colors.muted }]}>{train.to_stn_code}</Text>
           <Text style={[trainCardStyles.stationName, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>
-            {train.to}
+            {train.to_stn_name}
           </Text>
         </View>
       </View>
-      <View style={trainCardStyles.classRow}>
-        {train.classes.map((cls) => (
-          <View key={cls} style={[trainCardStyles.classChip, { backgroundColor: colors.brandTertiary }]}>
-            <Text style={[trainCardStyles.classText, { color: colors.brandPrimary }]}>{cls}</Text>
-          </View>
-        ))}
+      <View style={trainCardStyles.footer}>
+        <View style={trainCardStyles.footerItem}>
+          <MaterialDesignIcons name="map-marker-distance" size={12} color={colors.muted} />
+          <Text style={[trainCardStyles.footerText, { color: colors.muted }]}>{train.distance} km</Text>
+        </View>
+        <View style={trainCardStyles.footerItem}>
+          <MaterialDesignIcons name="map-marker-multiple" size={12} color={colors.muted} />
+          <Text style={[trainCardStyles.footerText, { color: colors.muted }]}>{train.halts} halts</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -234,38 +217,15 @@ export function TrainResultCard({ train, onPress }: { train: Train; onPress?: ()
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  formWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
   card: {
+    marginTop: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
   },
-  fieldRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: 12,
-  },
-  fieldIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fieldLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    marginBottom: 2,
-  },
-  input: {
-    fontSize: 15,
-    fontWeight: "600",
-    padding: 0,
-  },
   sep: { height: StyleSheet.hairlineWidth },
   submit: {
+    marginTop: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -278,17 +238,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
     paddingBottom: spacing.md,
   },
   resultsTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1.2, textTransform: "uppercase" },
+  errorCard: {
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+  },
+  errorText: { fontSize: 12 },
   empty: {
     alignItems: "center",
     gap: spacing.md,
     paddingVertical: spacing.xxxl,
   },
-  emptyText: { fontSize: 14 },
+  emptyText: { fontSize: 13 },
 });
 
 const trainCardStyles = StyleSheet.create({
@@ -308,11 +277,7 @@ const trainCardStyles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: "700", marginTop: 2 },
   daysChip: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: radius.sm },
   daysText: { fontSize: 10, fontWeight: "700" },
-  timeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   col: { flex: 1 },
   midCol: { alignItems: "center", gap: 4, width: 70 },
   time: { fontSize: 20, fontWeight: "800" },
@@ -320,7 +285,7 @@ const trainCardStyles = StyleSheet.create({
   stationName: { fontSize: 11, marginTop: 2 },
   duration: { fontSize: 11, fontWeight: "700" },
   line: { width: "100%", height: 1 },
-  classRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  classChip: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: radius.sm },
-  classText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
+  footer: { flexDirection: "row", gap: spacing.lg },
+  footerItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  footerText: { fontSize: 11, fontWeight: "600" },
 });

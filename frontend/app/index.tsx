@@ -19,12 +19,12 @@ interface Feature {
 }
 
 const FEATURES: Feature[] = [
-  { key: "search", label: "Train Search", caption: "Find trains", icon: "train", route: "/train-search", testId: "home-train-search" },
-  { key: "pnr", label: "PNR Status", caption: "Track ticket", icon: "ticket-confirmation", route: "/pnr-status", testId: "home-pnr-status" },
-  { key: "live", label: "Live Status", caption: "Running info", icon: "radar", route: "/live-status", testId: "home-live-status" },
-  { key: "seats", label: "Seat Avail", caption: "Classes & quota", icon: "seat-passenger", route: "/seat-availability", testId: "home-seat-availability" },
+  { key: "search", label: "Train Search", caption: "Live search", icon: "train", route: "/train-search", testId: "home-train-search" },
+  { key: "pnr", label: "PNR Status", caption: "Real-time", icon: "ticket-confirmation", route: "/pnr-status", testId: "home-pnr-status" },
+  { key: "live", label: "Live Status", caption: "Live tracking", icon: "radar", route: "/live-status", testId: "home-live-status" },
+  { key: "seats", label: "Seat Avail", caption: "Live quota", icon: "seat-passenger", route: "/seat-availability", testId: "home-seat-availability" },
   { key: "fare", label: "Fare Split", caption: "Split cost", icon: "calculator-variant", route: "/fare-calculator", testId: "home-fare-calculator" },
-  { key: "route", label: "Train Route", caption: "Station timeline", icon: "map-marker-path", route: "/train-route", testId: "home-train-route" },
+  { key: "route", label: "Train Route", caption: "Full timeline", icon: "map-marker-path", route: "/train-route", testId: "home-train-route" },
 ];
 
 export default function Home() {
@@ -117,9 +117,9 @@ export default function Home() {
 
         {/* Info strip */}
         <View style={[styles.infoCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-          <MaterialDesignIcons name="information-outline" size={18} color={colors.brandPrimary} />
+          <MaterialDesignIcons name="shield-check-outline" size={18} color={colors.brandPrimary} />
           <Text style={[styles.infoText, { color: colors.onSurfaceSecondary }]}>
-            ODAYA v1 runs on sample demo data. External railway APIs can be added later.
+            Powered by RailKit. Live Indian Railways data for every module above.
           </Text>
         </View>
       </ScrollView>

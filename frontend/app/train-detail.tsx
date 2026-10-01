@@ -1,12 +1,12 @@
-import React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialDesignIcons from "@react-native-vector-icons/material-design-icons";
 
 import { ScreenHeader } from "@/src/components/screen-header";
-import { DemoBadge } from "@/src/components/demo-badge";
-import { TRAINS, getRouteFor } from "@/src/data/railways";
+import { LiveBadge } from "@/src/components/demo-badge";
+import { TrainInfoData, readableDays, trainInfo } from "@/src/data/api";
 import { useTheme, spacing, radius } from "@/src/theme";
 
 export default function TrainDetail() {
@@ -14,51 +14,94 @@ export default function TrainDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { number } = useLocalSearchParams<{ number: string }>();
-  const train = TRAINS.find((t) => t.number === number) ?? TRAINS[0];
-  const route = getRouteFor(train.number);
+
+  const [data, setData] = useState<TrainInfoData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      if (!number) return;
+      setLoading(true);
+      const res = await trainInfo(number);
+      setLoading(false);
+      if (res.success) {
+        setData(res.data);
+        setError(null);
+      } else {
+        setError(res.error);
+      }
+    })();
+  }, [number]);
+
+  if (loading) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.surface }]} testID="train-detail-screen">
+        <ScreenHeader title={number || "Train"} subtitle="Loading..." />
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.brandPrimary} />
+          <Text style={[styles.centeredText, { color: colors.muted }]}>Fetching train details...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.surface }]} testID="train-detail-screen">
+        <ScreenHeader title={number || "Train"} />
+        <View style={styles.centered}>
+          <MaterialDesignIcons name="alert-circle-outline" size={48} color={colors.error} />
+          <Text style={[styles.centeredText, { color: colors.error }]}>{error || "No data"}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const { trainInfo: info, route } = data;
+  const totalDist = route[route.length - 1]?.distance ?? "0";
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="train-detail-screen">
-      <ScreenHeader title={train.number} subtitle={train.name} />
+      <ScreenHeader title={info.train_no} subtitle={info.train_name} />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}
       >
-        <DemoBadge />
+        <LiveBadge />
         <View style={[styles.summary, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.time, { color: colors.onSurface }]}>{train.departure}</Text>
-              <Text style={[styles.code, { color: colors.brandPrimary }]}>{train.fromCode}</Text>
-              <Text style={[styles.stationName, { color: colors.muted }]}>{train.from}</Text>
+              <Text style={[styles.time, { color: colors.onSurface }]}>{info.from_time}</Text>
+              <Text style={[styles.code, { color: colors.brandPrimary }]}>{info.from_stn_code}</Text>
+              <Text style={[styles.stationName, { color: colors.muted }]} numberOfLines={1}>
+                {info.from_stn_name}
+              </Text>
             </View>
             <View style={styles.midCol}>
               <MaterialDesignIcons name="train" size={16} color={colors.muted} />
               <View style={[styles.hLine, { backgroundColor: colors.borderStrong }]} />
-              <Text style={[styles.duration, { color: colors.brandPrimary }]}>{train.duration}</Text>
+              <Text style={[styles.duration, { color: colors.brandPrimary }]}>{info.travel_time}</Text>
             </View>
             <View style={[{ flex: 1 }, { alignItems: "flex-end" }]}>
-              <Text style={[styles.time, { color: colors.onSurface }]}>{train.arrival}</Text>
-              <Text style={[styles.code, { color: colors.brandPrimary }]}>{train.toCode}</Text>
-              <Text style={[styles.stationName, { color: colors.muted }]}>{train.to}</Text>
+              <Text style={[styles.time, { color: colors.onSurface }]}>{info.to_time}</Text>
+              <Text style={[styles.code, { color: colors.brandPrimary }]}>{info.to_stn_code}</Text>
+              <Text style={[styles.stationName, { color: colors.muted }]} numberOfLines={1}>
+                {info.to_stn_name}
+              </Text>
             </View>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <View style={styles.metaRow}>
-            <Meta icon="calendar" label="Runs" value={train.days} />
-            <Meta icon="map-marker-distance" label="Distance" value={`${route[route.length - 1].distanceKm} km`} />
+            <Meta icon="calendar" label="Runs" value={readableDays(info.running_days)} />
+            <Meta icon="map-marker-distance" label="Distance" value={`${totalDist} km`} />
             <Meta icon="train-car-passenger" label="Stops" value={`${route.length}`} />
           </View>
-        </View>
-
-        <Text style={[styles.sectionTitle, { color: colors.muted }]}>CLASSES</Text>
-        <View style={styles.classRow}>
-          {train.classes.map((cls) => (
-            <View key={cls} style={[styles.classCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-              <Text style={[styles.classCardTitle, { color: colors.brandPrimary }]}>{cls}</Text>
-              <Text style={[styles.classCardSub, { color: colors.muted }]}>{classLabel(cls)}</Text>
+          {info.type ? (
+            <View style={[styles.typeChip, { backgroundColor: colors.brandTertiary }]}>
+              <Text style={[styles.typeText, { color: colors.brandPrimary }]}>{info.type}</Text>
             </View>
-          ))}
+          ) : null}
         </View>
 
         <Text style={[styles.sectionTitle, { color: colors.muted }]}>QUICK ACTIONS</Text>
@@ -66,37 +109,65 @@ export default function TrainDetail() {
           <ActionBtn
             icon="radar"
             label="Live Status"
-            onPress={() => router.push({ pathname: "/live-status", params: { number: train.number } })}
+            onPress={() => router.push({ pathname: "/live-status", params: { number: info.train_no } })}
             testID="detail-action-live"
           />
           <ActionBtn
             icon="seat-passenger"
             label="Availability"
-            onPress={() => router.push({ pathname: "/seat-availability", params: { number: train.number } })}
+            onPress={() =>
+              router.push({
+                pathname: "/seat-availability",
+                params: { number: info.train_no, from: info.from_stn_code, to: info.to_stn_code },
+              })
+            }
             testID="detail-action-availability"
           />
           <ActionBtn
             icon="map-marker-path"
             label="Route"
-            onPress={() => router.push({ pathname: "/train-route", params: { number: train.number } })}
+            onPress={() => router.push({ pathname: "/train-route", params: { number: info.train_no } })}
             testID="detail-action-route"
           />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: colors.muted }]}>ROUTE PREVIEW</Text>
+        <View style={{ gap: spacing.sm }}>
+          {route.slice(0, 5).map((stop, idx) => (
+            <View
+              key={stop.stnCode + idx}
+              style={[styles.routePreviewRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+            >
+              <View style={[styles.routeDot, { backgroundColor: colors.brandPrimary }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.routeStn, { color: colors.onSurface }]} numberOfLines={1}>
+                  {stop.stnName}
+                </Text>
+                <Text style={[styles.routeMeta, { color: colors.muted }]}>
+                  {stop.stnCode} · {stop.distance} km · Day {stop.day}
+                </Text>
+              </View>
+              <Text style={[styles.routeTime, { color: colors.brandPrimary }]}>{stop.departure}</Text>
+            </View>
+          ))}
+          {route.length > 5 ? (
+            <Pressable
+              testID="detail-see-full-route"
+              onPress={() => router.push({ pathname: "/train-route", params: { number: info.train_no } })}
+              style={({ pressed }) => [
+                styles.seeMore,
+                { borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
+              ]}
+            >
+              <Text style={[styles.seeMoreText, { color: colors.brandPrimary }]}>
+                See all {route.length} stops →
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
     </View>
   );
-}
-
-function classLabel(cls: string) {
-  switch (cls) {
-    case "1A": return "First AC";
-    case "2A": return "AC 2 Tier";
-    case "3A": return "AC 3 Tier";
-    case "SL": return "Sleeper";
-    case "CC": return "Chair Car";
-    case "2S": return "Second Sitting";
-    default: return cls;
-  }
 }
 
 function Meta({ icon, label, value }: { icon: string; label: string; value: string }) {
@@ -120,11 +191,7 @@ function ActionBtn({ icon, label, onPress, testID }: { icon: string; label: stri
       onPress={onPress}
       style={({ pressed }) => [
         styles.action,
-        {
-          backgroundColor: colors.surfaceSecondary,
-          borderColor: colors.border,
-          opacity: pressed ? 0.85 : 1,
-        },
+        { backgroundColor: colors.surfaceSecondary, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
       ]}
     >
       <View style={[styles.actionIcon, { backgroundColor: colors.brandTertiary }]}>
@@ -137,6 +204,8 @@ function ActionBtn({ icon, label, onPress, testID }: { icon: string; label: stri
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
+  centeredText: { fontSize: 13 },
   summary: {
     marginTop: spacing.md,
     padding: spacing.lg,
@@ -156,6 +225,8 @@ const styles = StyleSheet.create({
   meta: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   metaLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
   metaValue: { fontSize: 13, fontWeight: "700", marginTop: 2 },
+  typeChip: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill },
+  typeText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
   sectionTitle: {
     marginTop: spacing.xl,
     marginBottom: spacing.sm,
@@ -163,17 +234,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 1.4,
   },
-  classRow: { flexDirection: "row", gap: spacing.sm, flexWrap: "wrap" },
-  classCard: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    minWidth: 86,
-    alignItems: "center",
-  },
-  classCardTitle: { fontSize: 16, fontWeight: "800", letterSpacing: 0.5 },
-  classCardSub: { fontSize: 10, marginTop: 2 },
   actionRow: { flexDirection: "row", gap: spacing.sm },
   action: {
     flex: 1,
@@ -191,4 +251,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   actionLabel: { fontSize: 12, fontWeight: "700" },
+  routePreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  routeDot: { width: 8, height: 8, borderRadius: 4 },
+  routeStn: { fontSize: 13, fontWeight: "700" },
+  routeMeta: { fontSize: 11, marginTop: 2 },
+  routeTime: { fontSize: 14, fontWeight: "800" },
+  seeMore: {
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  seeMoreText: { fontSize: 13, fontWeight: "700" },
 });

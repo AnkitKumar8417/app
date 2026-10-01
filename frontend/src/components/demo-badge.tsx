@@ -1,9 +1,9 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { useTheme, spacing, radius } from "@/src/theme";
+import { useTheme, radius } from "@/src/theme";
 
-export function DemoBadge({ compact = false }: { compact?: boolean }) {
+export function LiveBadge({ compact = false }: { compact?: boolean }) {
   const { colors } = useTheme();
   return (
     <View
@@ -16,15 +16,18 @@ export function DemoBadge({ compact = false }: { compact?: boolean }) {
           paddingHorizontal: compact ? 6 : 8,
         },
       ]}
-      testID="demo-data-badge"
+      testID="live-data-badge"
     >
       <View style={[styles.dot, { backgroundColor: colors.brandPrimary }]} />
       <Text style={[styles.label, { color: colors.onBrandTertiary, fontSize: compact ? 10 : 11 }]}>
-        SAMPLE / DEMO DATA
+        LIVE · RAILKIT
       </Text>
     </View>
   );
 }
+
+// Keep the legacy name importable so screens that still import DemoBadge compile.
+export const DemoBadge = LiveBadge;
 
 const styles = StyleSheet.create({
   wrap: {

@@ -1,132 +1,207 @@
-import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialDesignIcons from "@react-native-vector-icons/material-design-icons";
 
 import { ScreenHeader } from "@/src/components/screen-header";
-import { DemoBadge } from "@/src/components/demo-badge";
-import { TRAINS, getRouteFor } from "@/src/data/railways";
+import { LiveBadge } from "@/src/components/demo-badge";
+import { TrainInfoData, readableDays, trainInfo } from "@/src/data/api";
 import { useTheme, spacing, radius } from "@/src/theme";
 
 export default function TrainRoute() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { number } = useLocalSearchParams<{ number?: string }>();
+  const params = useLocalSearchParams<{ number?: string }>();
 
-  const [selected, setSelected] = useState<string>(number ?? "12951");
-  const train = useMemo(() => TRAINS.find((t) => t.number === selected) ?? TRAINS[0], [selected]);
-  const route = useMemo(() => getRouteFor(train.number), [train.number]);
+  const [input, setInput] = useState(params.number ?? "");
+  const [trainNumber, setTrainNumber] = useState(params.number ?? "");
+  const [data, setData] = useState<TrainInfoData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mark one station as "current" for a running-feel timeline
-  const currentIdx = Math.max(1, Math.floor(route.length / 2));
+  const canFetch = /^\d{5}$/.test(trainNumber);
+
+  useEffect(() => {
+    if (!canFetch) return;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const res = await trainInfo(trainNumber);
+      setLoading(false);
+      if (res.success) setData(res.data);
+      else {
+        setError(res.error);
+        setData(null);
+      }
+    })();
+  }, [trainNumber, canFetch]);
+
+  function submit() {
+    const cleaned = input.replace(/\D/g, "").slice(0, 5);
+    setInput(cleaned);
+    setTrainNumber(cleaned);
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="train-route-screen">
-      <ScreenHeader title="Train Route" subtitle={train.name} />
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xxl }}
-      >
-        <View style={{ marginTop: spacing.md }}>
-          <DemoBadge />
-        </View>
+      <ScreenHeader title="Train Route" subtitle={data?.trainInfo?.train_name || "Enter a train number"} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xxl }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={{ marginTop: spacing.md }}>
+            <LiveBadge />
+          </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>SELECT TRAIN</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-          {TRAINS.map((t) => {
-            const active = t.number === selected;
-            return (
+          <View style={[styles.card, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={styles.inputRow}>
+              <View style={[styles.iconBox, { backgroundColor: colors.brandTertiary }]}>
+                <MaterialDesignIcons name="train" size={18} color={colors.brandPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.inputLabel, { color: colors.muted }]}>TRAIN NUMBER</Text>
+                <TextInput
+                  testID="route-train-input"
+                  value={input}
+                  onChangeText={(v) => setInput(v.replace(/\D/g, "").slice(0, 5))}
+                  placeholder="e.g. 12951"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  returnKeyType="search"
+                  onSubmitEditing={submit}
+                  style={[styles.inputText, { color: colors.onSurface }]}
+                />
+              </View>
               <Pressable
-                key={t.number}
-                testID={`route-train-chip-${t.number}`}
-                onPress={() => setSelected(t.number)}
-                style={[
-                  styles.chip,
+                testID="route-fetch-button"
+                onPress={submit}
+                disabled={input.length !== 5}
+                style={({ pressed }) => [
+                  styles.trackBtn,
                   {
-                    backgroundColor: active ? colors.brandPrimary : colors.surfaceSecondary,
-                    borderColor: active ? colors.brandPrimary : colors.border,
+                    backgroundColor: input.length === 5 ? colors.brandPrimary : colors.surfaceTertiary,
+                    opacity: pressed ? 0.85 : 1,
                   },
                 ]}
               >
-                <Text style={[styles.chipText, { color: active ? colors.onBrandPrimary : colors.onSurface }]}>
-                  {t.number}
-                </Text>
+                <MaterialDesignIcons
+                  name="map-marker-path"
+                  size={18}
+                  color={input.length === 5 ? colors.onBrandPrimary : colors.muted}
+                />
               </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Summary */}
-        <View style={[styles.summary, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-          <View style={styles.summaryRow}>
-            <Metric label="Stops" value={`${route.length}`} />
-            <View style={[styles.vDiv, { backgroundColor: colors.divider }]} />
-            <Metric label="Distance" value={`${route[route.length - 1].distanceKm} km`} />
-            <View style={[styles.vDiv, { backgroundColor: colors.divider }]} />
-            <Metric label="Duration" value={train.duration} />
+            </View>
           </View>
-        </View>
 
-        {/* Timeline */}
-        <View style={styles.timeline}>
-          {route.map((stop, idx) => {
-            const passed = idx < currentIdx;
-            const current = idx === currentIdx;
-            const nodeColor = passed ? colors.muted : current ? colors.brandPrimary : colors.onSurface;
-            const lineColor = passed ? colors.muted : colors.borderStrong;
-            return (
-              <View key={stop.code + idx} style={styles.timelineRow} testID={`route-stop-${idx}`}>
-                <View style={styles.timelineLeft}>
-                  <View
-                    style={[
-                      styles.node,
-                      {
-                        backgroundColor: current ? colors.brandPrimary : colors.surface,
-                        borderColor: nodeColor,
-                      },
-                    ]}
-                  >
-                    {current ? (
-                      <MaterialDesignIcons name="train" size={10} color={colors.onBrandPrimary} />
-                    ) : passed ? (
-                      <MaterialDesignIcons name="check" size={10} color={colors.muted} />
-                    ) : null}
-                  </View>
-                  {idx !== route.length - 1 ? <View style={[styles.line, { backgroundColor: lineColor }]} /> : null}
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={colors.brandPrimary} />
+              <Text style={[styles.centerText, { color: colors.muted }]}>Fetching route...</Text>
+            </View>
+          ) : error ? (
+            <View style={[styles.errorCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.error }]}>
+              <MaterialDesignIcons name="alert-circle" size={18} color={colors.error} />
+              <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+            </View>
+          ) : data ? (
+            <RouteTimeline data={data} />
+          ) : (
+            <View style={styles.center}>
+              <MaterialDesignIcons name="map-marker-path" size={48} color={colors.muted} />
+              <Text style={[styles.centerText, { color: colors.muted }]}>
+                Enter a 5-digit train number to see its complete station timeline.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function RouteTimeline({ data }: { data: TrainInfoData }) {
+  const { colors } = useTheme();
+  const info = data.trainInfo;
+  const route = data.route;
+  const totalDist = route[route.length - 1]?.distance ?? "0";
+
+  return (
+    <View>
+      <View style={[styles.summary, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+        <View style={styles.summaryRow}>
+          <Metric label="Stops" value={`${route.length}`} />
+          <View style={[styles.vDiv, { backgroundColor: colors.divider }]} />
+          <Metric label="Distance" value={`${totalDist} km`} />
+          <View style={[styles.vDiv, { backgroundColor: colors.divider }]} />
+          <Metric label="Duration" value={info.travel_time} />
+          <View style={[styles.vDiv, { backgroundColor: colors.divider }]} />
+          <Metric label="Runs" value={readableDays(info.running_days)} />
+        </View>
+      </View>
+
+      <View style={styles.timeline}>
+        {route.map((stop, idx) => {
+          const first = idx === 0;
+          const last = idx === route.length - 1;
+          const nodeColor = first || last ? colors.brandPrimary : colors.onSurface;
+          const lineColor = colors.borderStrong;
+          return (
+            <View key={stop.stnCode + idx} style={styles.timelineRow} testID={`route-stop-${idx}`}>
+              <View style={styles.timelineLeft}>
+                <View
+                  style={[
+                    styles.node,
+                    {
+                      backgroundColor: first || last ? colors.brandPrimary : colors.surface,
+                      borderColor: nodeColor,
+                    },
+                  ]}
+                >
+                  {first || last ? (
+                    <MaterialDesignIcons
+                      name={first ? "flag" : "flag-checkered"}
+                      size={10}
+                      color={colors.onBrandPrimary}
+                    />
+                  ) : null}
                 </View>
-                <View style={[styles.stopCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
-                  <View style={styles.stopHeader}>
-                    <Text style={[styles.stationName, { color: colors.onSurface }]} numberOfLines={1}>
-                      {stop.station}
-                    </Text>
-                    <Text style={[styles.stationCode, { color: colors.brandPrimary }]}>{stop.code}</Text>
-                  </View>
-                  <View style={styles.stopMeta}>
-                    <TimeCell label="Arr" value={stop.arrival} color={colors.muted} valueColor={colors.onSurface} />
-                    <TimeCell label="Dep" value={stop.departure} color={colors.muted} valueColor={colors.onSurface} />
-                    <TimeCell
-                      label="Halt"
-                      value={stop.haltMin === 0 ? "—" : `${stop.haltMin}m`}
-                      color={colors.muted}
-                      valueColor={colors.onSurface}
-                    />
-                    <TimeCell
-                      label="Day"
-                      value={`D${stop.dayOffset}`}
-                      color={colors.muted}
-                      valueColor={colors.brandPrimary}
-                    />
-                  </View>
-                  <View style={[styles.distRow, { borderTopColor: colors.divider }]}>
-                    <MaterialDesignIcons name="map-marker-distance" size={12} color={colors.muted} />
-                    <Text style={[styles.distText, { color: colors.muted }]}>{stop.distanceKm} km from origin</Text>
-                  </View>
+                {!last ? <View style={[styles.line, { backgroundColor: lineColor }]} /> : null}
+              </View>
+              <View style={[styles.stopCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <View style={styles.stopHeader}>
+                  <Text style={[styles.stationName, { color: colors.onSurface }]} numberOfLines={1}>
+                    {stop.stnName}
+                  </Text>
+                  <Text style={[styles.stationCode, { color: colors.brandPrimary }]}>{stop.stnCode}</Text>
+                </View>
+                <View style={styles.stopMeta}>
+                  <TimeCell label="Arr" value={stop.arrival} />
+                  <TimeCell label="Dep" value={stop.departure} />
+                  <TimeCell label="Halt" value={stop.halt?.replace(" min", "m") || "—"} />
+                  <TimeCell label="Day" value={`D${stop.day}`} highlight />
+                </View>
+                <View style={[styles.distRow, { borderTopColor: colors.divider }]}>
+                  <MaterialDesignIcons name="map-marker-distance" size={12} color={colors.muted} />
+                  <Text style={[styles.distText, { color: colors.muted }]}>{stop.distance} km from origin</Text>
                 </View>
               </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -136,50 +211,60 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.metric}>
       <Text style={[styles.metricLabel, { color: colors.muted }]}>{label}</Text>
-      <Text style={[styles.metricValue, { color: colors.onSurface }]}>{value}</Text>
+      <Text style={[styles.metricValue, { color: colors.onSurface }]} numberOfLines={1}>
+        {value}
+      </Text>
     </View>
   );
 }
 
-function TimeCell({ label, value, color, valueColor }: { label: string; value: string; color: string; valueColor: string }) {
+function TimeCell({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  const { colors } = useTheme();
   return (
     <View style={styles.timeCell}>
-      <Text style={[styles.timeLabel, { color }]}>{label}</Text>
-      <Text style={[styles.timeValue, { color: valueColor }]}>{value}</Text>
+      <Text style={[styles.timeLabel, { color: colors.muted }]}>{label}</Text>
+      <Text style={[styles.timeValue, { color: highlight ? colors.brandPrimary : colors.onSurface }]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.4,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  chipRow: { gap: spacing.sm, paddingRight: spacing.lg },
-  chip: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: radius.pill,
+  card: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    flexShrink: 0,
   },
-  chipText: { fontSize: 12, fontWeight: "700" },
+  inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  iconBox: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  inputLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1.2 },
+  inputText: { fontSize: 20, fontWeight: "800", padding: 0, marginTop: 2, letterSpacing: 2 },
+  trackBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   summary: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
   },
   summaryRow: { flexDirection: "row", alignItems: "center" },
-  vDiv: { width: StyleSheet.hairlineWidth, height: 32, marginHorizontal: spacing.sm },
+  vDiv: { width: StyleSheet.hairlineWidth, height: 32, marginHorizontal: 6 },
   metric: { flex: 1, alignItems: "center" },
   metricLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1 },
-  metricValue: { fontSize: 15, fontWeight: "800", marginTop: 2 },
-  timeline: { marginTop: spacing.xl },
+  metricValue: { fontSize: 13, fontWeight: "800", marginTop: 2 },
+  center: { paddingVertical: spacing.xxxl, alignItems: "center", gap: spacing.md },
+  centerText: { fontSize: 13, textAlign: "center" },
+  errorCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  errorText: { fontSize: 13, flex: 1 },
+  timeline: { marginTop: spacing.lg },
   timelineRow: { flexDirection: "row" },
   timelineLeft: { width: 32, alignItems: "center" },
   node: {
@@ -191,11 +276,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 10,
   },
-  line: {
-    width: 2,
-    flex: 1,
-    marginTop: 2,
-  },
+  line: { width: 2, flex: 1, marginTop: 2 },
   stopCard: {
     flex: 1,
     marginLeft: spacing.sm,
